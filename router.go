@@ -1,63 +1,68 @@
 package router
 
 import (
+	"fmt"
+	"log"
 	"net/http"
+	"time"
 )
 
-type HandlerFunc = func(http.ResponseWriter, *http.Request)
-
 type Router struct {
-	URL      string
-	Handlers []Handler
-}
-
-type Handler struct {
-	Method  string
-	Handler HandlerFunc
+	handlers map[string]http.HandlerFunc
 }
 
 func NewRouter() *Router {
-	var handlers []Handler
 	return &Router{
-		URL:      "",
-		Handlers: handlers,
+		handlers: make(map[string]http.HandlerFunc),
 	}
 }
 
-func (r *Router) NewHandler(method string, handler HandlerFunc) {
-	newHandler := Handler{
-		Method:  method,
-		Handler: handler,
-	}
-
-	r.Handlers = append(r.Handlers, newHandler)
+func combine(method string, path string) string {
+	return fmt.Sprintf("%s:%s", method, path)
 }
 
-func (r *Router) SetUrl(newUrl string) error {
-	r.URL = newUrl
-	return nil
+func (r *Router) GET(path string, handler http.HandlerFunc) {
+	r.handlers[combine(http.MethodGet, path)] = handler
 }
 
-func validMethod(method string) bool {
-	switch method {
-	case http.MethodPost:
-		return true
-	case http.MethodConnect:
-		return true
-	case http.MethodGet:
-		return true
-	case http.MethodDelete:
-		return true
-	case http.MethodPut:
-		return true
-	case http.MethodOptions:
-		return true
-	case http.MethodPatch:
-		return true
-	case http.MethodTrace:
-		return true
-	default:
-		// since a match wasn't found the method isn't valid
-		return false
+func (r *Router) POST(path string, handler http.HandlerFunc) {
+	r.handlers[combine(http.MethodPost, path)] = handler
+}
+
+func (r *Router) DELETE(path string, handler http.HandlerFunc) {
+	r.handlers[combine(http.MethodDelete, path)] = handler
+}
+
+func (r *Router) PUT(path string, handler http.HandlerFunc) {
+	r.handlers[combine(http.MethodPut, path)] = handler
+}
+
+func (r *Router) PATCH(path string, handler http.HandlerFunc) {
+	r.handlers[combine(http.MethodPatch, path)] = handler
+}
+
+func notFound(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(fmt.Sprintf("Could not find path: %s", r.URL.Path)))
+}
+
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	f, ok := r.handlers[combine(req.Method, req.URL.Path)]
+	if !ok {
+		notFound(w, req)
+		return
 	}
+
+	f(w, req)
+}
+
+func (r *Router) Listen(port string) {
+	session := &http.Server{
+		Addr:           port,
+		Handler:        r,
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   10 * time.Second,
+		MaxHeaderBytes: 1 << 20,
+	}
+
+	log.Fatal(session.ListenAndServe())
 }
