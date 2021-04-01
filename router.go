@@ -1,7 +1,9 @@
 package obviate
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -9,6 +11,12 @@ import (
 
 type Router struct {
 	handlers map[string]http.HandlerFunc
+}
+
+type Route interface {
+	Head() string
+	Logger() bool
+	Tester() bool
 }
 
 func NewRouter() *Router {
@@ -45,6 +53,36 @@ func notFound(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf("Could not find path: %s", r.URL.Path)))
 }
 
+func ParseJSON(body io.ReadCloser, res interface{}) error {
+	return json.NewDecoder(body).Decode(res)
+}
+
+func Respond(w http.ResponseWriter, r *http.Request, code int, data interface{}) error {
+	if e, ok := data.(error); ok {
+		tmp := struct{
+			Status string `json:"status"`
+			Error string `json:"error"`
+		}{
+			"error",
+			e.Error(),
+		}
+
+		data = tmp
+	}
+
+	j, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(j)
+	LogRequest(r, code)
+	return nil
+}
+
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	f, ok := r.handlers[combine(req.Method, req.URL.Path)]
 	if !ok {
@@ -66,3 +104,4 @@ func (r *Router) Listen(port string) {
 
 	log.Fatal(session.ListenAndServe())
 }
+
